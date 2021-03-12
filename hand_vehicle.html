@@ -100,7 +100,7 @@
                     results.multiHandLandmarks.forEach((landmarks, index) => {
                         landmarks.forEach(point => {
                             p = new cv.Point(width*point.x, height*point.y);
-                            cv.circle(img, p, 5, [255, 0, 0, 255], cv.FILLED);
+                            cv.circle(img, p, width/100, [255, 0, 0, 255], cv.FILLED);
                             // 手の中心点を求める。
                             const {x, y} = point;
                             sumx[index] = sumx[index] + width*x;
@@ -110,7 +110,7 @@
                         avgy[index] = Math.floor(sumy[index] / landmarks.length);
                         // console.log(`length:${landmarks.length},avgx:${avgx}, avgy${avgy}`)
                         let avgp = new cv.Point(avgx[index], avgy[index])
-                        cv.circle(img, avgp, 5, [0, 0, 255, 255], cv.FILLED);
+                        cv.circle(img, avgp, width/100, [0, 0, 255, 255], cv.FILLED);
                     });
                     // 中心との角度計算
                     let center = [(avgx[0]+avgx[1])/2, (avgy[0]+avgy[1])/2];
