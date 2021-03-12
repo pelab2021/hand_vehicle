@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ja">
+    <head>
+        <meta charset="utf-8">
+        <title>画像処理音声認識_2</title>
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css" integrity="sha384-9aIt2nRpC12Uk9gS9baDl411NQApFmC26EwAOH8WgZl5MYYxFfc+NcPb1dKGj7Sk" crossorigin="anonymous">
+        <style type="text/css">
+            html {
+                font-size: 16px;
+                background-color: #FFFFFF;
+            }
+            #canvas_wrapper {
+                position: relative;
+            }
+            canvas {
+                position: absolute;
+                left: 0;
+                right: 0;
+                margin: auto;
+            }
+
+        </style>
+        <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js" integrity="sha384-DfXdz2htPH0lsSSs5nCTpuj/zy4C+OGpamoFVy38MVBnE+IbbVYUew+OrCXaRkfj" crossorigin="anonymous"></script>
+        <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js" integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo" crossorigin="anonymous"></script>
+        <script src="https://physim.ifdef.jp/libs/bootstrap.min.js"></script>
+        
+        <script src="https://docs.opencv.org/master/opencv.js"></script>
+        <script src="https://physim.ifdef.jp/libs/three.min.js"></script>
+        <script src="https://physim.ifdef.jp/libs/cannon.min.js"></script>
+        
+        <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.1.1612238212/hands.js" crossorigin="anonymous"></script>
+    </head>
+    <body>
+        <video id="video"></video>
+        <div id="canvas_wrapper">
+            <canvas id="canvas"></canvas>
+            <canvas id="canvas2" style="transform: scale(-1, 1); opacity: 0.8;"></canvas>
+        </div>
+        <input type="range" id="angle" class="custom-range" min="-0.75" max="0.75" step="0.01" value="0">
+        <input type="range" id="speed" class="custom-range" min="-5" max="5" step="0.01" value="0">
+        <script>
+            let count = 0;
+            let world;
+            // 物理エンジン上の平面、本体、車輪
+            let phyPlane;
+            let phyBody, phyWheels = [undefined, undefined, undefined, undefined];
+            let body_size = [20, 8, 12], wheel_size = [3, 2];
+            // 前の車輪の本体に対する角度と車輪のスピード
+            let wheelAngle = 0.5, wheelSpeed = 3;
+            // 本体と車輪の拘束
+            let constraints = [];
+            let scene;
+            // CG上の平面、本体、車輪
+            let viewPlane;
+            let viewBody, viewWheels = [undefined, undefined, undefined, undefined];
+            let renderer;
+            let canvas = document.getElementById("canvas");
+            let canvas2 = document.getElementById("canvas2");
+            let context = canvas2.getContext("2d");
+            let container = document.getElementById("container");
+
+            // ウィンドウの大きさが変わったとき、描画範囲も変更
+            function onWindowResize(){
+                if (innerWidth < innerHeight*16/9){
+                    canvas.width = innerWidth;
+                    canvas.height = canvas.width*9/16;
+                    canvas2.width = innerWidth;
+                    canvas2.height = canvas.width*9/16;
+                }
+                else {
+                    canvas.height = innerHeight;
+                    canvas.width = canvas.height*16/9;
+                    canvas2.height = innerHeight;
+                    canvas2.width = canvas.height*16/9;
+                }
+                if (renderer != undefined){
+                    renderer.setSize(canvas.width, canvas.height);
+                }
+                document.getElementById("canvas_wrapper").style.height = String(canvas.height+10)+"px";
+            }
+            window.addEventListener('resize', onWindowResize, false);
+            onWindowResize();
+
+            const video = document.getElementById("video");
+            video.style.display = "none";
+
+            function onResults(results) {
+                width = canvas2.width;
+                height = canvas2.height;
+                let img = new cv.Mat(height, width, cv.CV_8UC4);
+                console.log(img.channels());
+                context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, width, height);
+                img.data.set(context.getImageData(0, 0, width, height).data);
+                context.clearRect(0, 0, width, height);
+                if (results.multiHandLandmarks && results.multiHandLandmarks.length == 2) {
+                    let sumx = [0, 0], sumy = [0, 0], avgx = [0, 0], avgy = [0, 0];
+                    results.multiHandLandmarks.forEach((landmarks, index) => {
+                        landmarks.forEach(point => {
+                            p = new cv.Point(width*point.x, height*point.y);
+                            cv.circle(img, p, 5, [255, 0, 0, 255], cv.FILLED);
+                            // 手の中心点を求める。
+                            const {x, y} = point;
+                            sumx[index] = sumx[index] + width*x;
+                            sumy[index] = sumy[index] + height*y;
+                        });
+                        avgx[index] = Math.floor(sumx[index] / landmarks.length);
+                        avgy[index] = Math.floor(sumy[index] / landmarks.length);
+                        // console.log(`length:${landmarks.length},avgx:${avgx}, avgy${avgy}`)
+                        let avgp = new cv.Point(avgx[index], avgy[index])
+                        cv.circle(img, avgp, 5, [0, 0, 255, 255], cv.FILLED);
+                    });
+                    // 中心との角度計算
+                    let center = [(avgx[0]+avgx[1])/2, (avgy[0]+avgy[1])/2];
+                    let angle;
+                    if (avgx[0] > avgx[1]){
+                        angle = Math.atan2(avgy[0] - center[1], avgx[0] - center[0]);
+                    }
+                    else {
+                        angle = Math.atan2(avgy[1] - center[1], avgx[1] - center[0]);
+                    }
+                    let handSize = 0;
+                    let diff = (x1, y1, x2, y2) => {return ((x1-x2)**2+(y1-y2)**2)**0.5};
+                    results.multiHandLandmarks.forEach((landmarks, index) => {
+                        landmarks.forEach(point => {
+                            handSize = Math.max(handSize, diff(avgx[index], avgy[index], width*point.x, height*point.y));
+                        });
+                    });
+                    console.log(`center x:${center[0]}, y:${center[1]}, avg x:${avgx}, y:${avgy}, angle:${angle}`);
+                    document.getElementById("angle").value = -angle/2;
+                    document.getElementById("speed").value = 70*(handSize/width-0.12);
+                }
+                else {
+                    document.getElementById("angle").value = 0.95*document.getElementById("angle").value;
+                    document.getElementById("speed").value = 0.95*document.getElementById("speed").value;
+                }
+                let M = cv.matFromArray(2, 3, cv.CV_64FC1, [1/3, 0, 0, 0, 1/3, height*2/3]);
+                let dsize = new cv.Size(width, height);
+                cv.warpAffine(img, img, M, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
+                cv.imshow("canvas2", img);
+                img.delete();
+            }
+
+
+            const hands = new Hands({locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.1.1612238212/${file}`;
+            }});
+            hands.setOptions({
+                maxNumHands: 2,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+            hands.onResults(onResults);
+
+            const cameraDevice = new Camera(video, {
+                onFrame: async () => {
+                    await hands.send({image: video});
+                },
+                width: 1280,
+                height: 720
+            });
+            cameraDevice.start();
+
+            setPhy();
+            setView();
+            animate();
+
+            // 物理エンジンの設定
+            function setPhy() {
+                document.getElementById("angle").value = 0;
+                document.getElementById("speed").value = 0;
+                // 物理世界を生成
+                world = new CANNON.World();
+                // 重力を設定
+                world.gravity.set(0, -9.82, 0);
+                // ぶつかっている「可能性のある」剛体同士を見つける作業
+                world.broadphase = new CANNON.NaiveBroadphase();
+                // 反復計算回数
+                world.solver.iterations = 10;
+                // 許容値
+                world.solver.tolerance = 0.1;
+
+                let mat = new CANNON.Material('mat');
+                mat.friction = 1.0;
+                mat.restitution = 0.5;
+
+                // 地面用にPlaneの剛体を質量0で生成
+                phyPlane = new CANNON.Body({mass: 0});
+                phyPlane.material = mat;
+                phyPlane.addShape(new CANNON.Plane());
+                // X軸に90度に回転
+                phyPlane.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI/2);
+                // 物理世界に追加
+                world.add(phyPlane);
+
+                // Boxのシェイプの剛体を質量10で生成
+                phyBody = new CANNON.Body({mass: 10});
+                phyBody.material = mat;
+                phyBody.addShape(new CANNON.Box(new CANNON.Vec3(body_size[0]/2, body_size[1]/2, body_size[2]/2)));
+                phyBody.position.y = 10;
+                phyBody.velocity.set(-3, 0, 0);
+                // 物理世界に追加
+                world.add(phyBody);
+
+                // 車輪の生成
+                // 0: 前左, 1: 前右
+                // 2: 後左, 3: 後右
+                for (var i=0; i<4; i++){
+                    phyWheels[i] = new CANNON.Body({mass: 1});
+                    phyWheels[i].mat =  mat;
+                    phyWheels[i].addShape(new CANNON.Cylinder(wheel_size[0], wheel_size[0], wheel_size[1], 100));
+                    if (i < 2)    phyWheels[i].position.x = body_size[0]/2-wheel_size[0]/2;
+                    else          phyWheels[i].position.x = -(body_size[0]/2-wheel_size[0]/2);
+                    phyWheels[i].position.y = 10-body_size[1]/2+wheel_size[0]/2;
+                    if (i%2 == 0)    phyWheels[i].position.z = -(body_size[2]/2+wheel_size[1]/2+2);
+                    else             phyWheels[i].position.z = body_size[2]/2+wheel_size[1]/2+2;
+                    world.add(phyWheels[i]);
+                }
+
+                // 本体と車輪の拘束を設定
+                let zero = new CANNON.Vec3();
+                constraints.push(new CANNON.HingeConstraint(phyBody, phyWheels[0],  {pivotA: new CANNON.Vec3(body_size[0]/2-wheel_size[0]/2, -body_size[1]/2+wheel_size[0]/2, -(body_size[2]/2+wheel_size[1]/2+2)), axisA: new CANNON.Vec3(0, 0, 1),  pivotB: zero, axisB: new CANNON.Vec3(0, 0, 1)}));
+                constraints.push(new CANNON.HingeConstraint(phyBody, phyWheels[1],  {pivotA: new CANNON.Vec3(body_size[0]/2-wheel_size[0]/2, -body_size[1]/2+wheel_size[0]/2, body_size[2]/2+wheel_size[1]/2+2), axisA: new CANNON.Vec3(0, 0, 1),  pivotB: zero, axisB: new CANNON.Vec3(0, 0, 1)}));
+                constraints.push(new CANNON.HingeConstraint(phyBody, phyWheels[2],  {pivotA: new CANNON.Vec3(-(body_size[0]/2-wheel_size[0]/2), -body_size[1]/2+wheel_size[0]/2, -(body_size[2]/2+wheel_size[1]/2+2)), axisA: new CANNON.Vec3(0, 0, 1),  pivotB: zero, axisB: new CANNON.Vec3(0, 0, 1)}));
+                constraints.push(new CANNON.HingeConstraint(phyBody, phyWheels[3],  {pivotA: new CANNON.Vec3(-(body_size[0]/2-wheel_size[0]/2), -body_size[1]/2+wheel_size[0]/2, body_size[2]/2+wheel_size[1]/2+2), axisA: new CANNON.Vec3(0, 0, 1),  pivotB: zero, axisB: new CANNON.Vec3(0, 0, 1)}));
+                for (var i=0; i<4; i++){
+                    world.addConstraint(constraints[i]);
+                }
+                // 前輪で駆動
+                constraints[0].enableMotor();
+                constraints[1].enableMotor();
+            }
+
+            // CGの設定
+            function setView() {
+                scene = new THREE.Scene();
+                camera = new THREE.PerspectiveCamera(45, canvas.width/canvas.height, 0.1, 1000);
+                camera.position.set(-40, 40, 50);
+                camera.lookAt(new THREE.Vector3(0, 0, 0));
+                scene.add(camera);
+
+                let directionalLight = new THREE.DirectionalLight(0xffffff);
+                directionalLight.position.set(100, 100, 100);
+                directionalLight.castShadow = true;
+                directionalLight.shadow.mapSize.set(1024, 1024);
+                directionalLight.shadow.camera.near = 2;
+                directionalLight.shadow.camera.far = 1000;
+                directionalLight.shadow.camera.left = -50;
+                directionalLight.shadow.camera.right = 50;
+                directionalLight.shadow.camera.top = 50;
+                directionalLight.shadow.camera.bottom = -50;
+                scene.add(directionalLight);
+                
+                let amb = new THREE.AmbientLight(0x999999);
+                scene.add(amb);
+
+                viewBody = new THREE.Mesh(new THREE.CubeGeometry(body_size[0], body_size[1], body_size[2], 10, 10), new THREE.MeshLambertMaterial({
+                    color: 0xff00ff
+                }));
+                viewBody.castShadow = true;
+                viewBody.receiveShadow = true;
+                scene.add(viewBody);
+
+                for (var i=0; i<4; i++){
+                    let geoWheel = new THREE.CylinderGeometry(wheel_size[0], wheel_size[0], wheel_size[1], 100);
+                    geoWheel.rotateX(Math.PI/2);
+                    viewWheels[i] = new THREE.Mesh(geoWheel, new THREE.MeshLambertMaterial({
+                        color: (i<2 ? 0xffff00 : 0x00ffff)
+                    }));
+                    viewWheels[i].castShadow = true;
+                    viewWheels[i].receiveShadow = true;
+                    scene.add(viewWheels[i]);
+                }
+
+                let texture = new THREE.TextureLoader().load("img/check.png");
+                viewPlane = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshPhongMaterial({
+                    map: texture
+                }));
+                viewPlane.rotation.x = -Math.PI/2;
+                viewPlane.receiveShadow = true;
+                scene.add(viewPlane);
+                
+                renderer = new THREE.WebGLRenderer({canvas: canvas});
+                renderer.setSize(canvas.width, canvas.height);
+                renderer.setClearColor(0x87ceeb);
+                renderer.shadowMap.enabled = true;
+                renderer.render(scene, camera);
+            }
+            
+            // 手の検出
+            // 物理エンジンを1ステップ進める→CGに反映
+            // を繰り返す
+            function animate() {
+                count++;
+                requestAnimationFrame(animate);
+                // 物理エンジンの時間を進める
+                world.step(1/10);
+                viewBody.position.copy(phyBody.position);
+                viewBody.quaternion.copy(phyBody.quaternion);
+                for (var i=0; i<4; i++){
+                    viewWheels[i].position.copy(phyWheels[i].position);
+                    viewWheels[i].quaternion.copy(phyWheels[i].quaternion);
+                }
+
+                // 前方ベクトルの計算
+                /*
+                let forward = new THREE.Vector4(1, 0, 0, 0);
+                forward.applyMatrix4(viewBody.matrix).normalize();
+                let bodyAngle = Math.atan2(-forward.z, forward.x);
+                */
+                
+                // 前輪で操舵
+                wheelAngle = -Number(document.getElementById("angle").value);
+                wheelSpeed = Number(document.getElementById("speed").value);
+                constraints[0].axisA = new CANNON.Vec3(Math.sin(wheelAngle), 0, Math.cos(wheelAngle));
+                constraints[1].axisA = new CANNON.Vec3(Math.sin(wheelAngle), 0, Math.cos(wheelAngle));
+                constraints[0].setMotorSpeed(wheelSpeed);
+                constraints[1].setMotorSpeed(wheelSpeed);
+                // レンダリング
+                renderer.render(scene, camera);
+            }
+        </script>
+    </body>
+</html>
