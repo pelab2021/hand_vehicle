@@ -34,16 +34,17 @@
         <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.1.1612238212/hands.js" crossorigin="anonymous"></script>
     </head>
     <body>
-        <video id="video"></video>
         <div id="canvas_wrapper">
             <canvas id="canvas"></canvas>
             <canvas id="canvas2" style="transform: scale(-1, 1); opacity: 0.8;"></canvas>
         </div>
         <input type="range" id="angle" class="custom-range" min="-0.75" max="0.75" step="0.01" value="0">
         <input type="range" id="speed" class="custom-range" min="-5" max="5" step="0.01" value="0">
+        <video id="video"></video>
         <script>
             let count = 0;
             let world;
+            let timeStep = 1/10;
             // 物理エンジン上の平面、本体、車輪
             let phyPlane;
             let phyBody, phyWheels = [undefined, undefined, undefined, undefined];
@@ -84,84 +85,96 @@
             window.addEventListener('resize', onWindowResize, false);
             onWindowResize();
 
-            const video = document.getElementById("video");
-            video.style.display = "none";
+            if (navigator.userAgent.match(/iPhone|Android.+Mobile/)){
+                timeStep = 1/30;
+                window.addEventListener("devicemotion", e => {
+                    let accVec = e.accelerationIncludingGravity;
+                    let [x, y, z] = [accVec.x, accVec.y, accVec.z];
+                    let angle = Math.atan(y/x);
+                    document.getElementById("angle").value = 4*angle;
+                    document.getElementById("speed").value = z;
+                });
+            }
+            else {
+                const video = document.getElementById("video");
+                video.style.display = "none";
 
-            function onResults(results) {
-                width = canvas2.width;
-                height = canvas2.height;
-                let img = new cv.Mat(height, width, cv.CV_8UC4);
-                console.log(img.channels());
-                context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, width, height);
-                img.data.set(context.getImageData(0, 0, width, height).data);
-                context.clearRect(0, 0, width, height);
-                if (results.multiHandLandmarks && results.multiHandLandmarks.length == 2) {
-                    let sumx = [0, 0], sumy = [0, 0], avgx = [0, 0], avgy = [0, 0];
-                    results.multiHandLandmarks.forEach((landmarks, index) => {
-                        landmarks.forEach(point => {
-                            p = new cv.Point(width*point.x, height*point.y);
-                            cv.circle(img, p, width/100, [255, 0, 0, 255], cv.FILLED);
-                            // 手の中心点を求める。
-                            const {x, y} = point;
-                            sumx[index] = sumx[index] + width*x;
-                            sumy[index] = sumy[index] + height*y;
+                function onResults(results) {
+                    width = canvas2.width;
+                    height = canvas2.height;
+                    let img = new cv.Mat(height, width, cv.CV_8UC4);
+                    console.log(img.channels());
+                    context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, width, height);
+                    img.data.set(context.getImageData(0, 0, width, height).data);
+                    context.clearRect(0, 0, width, height);
+                    if (results.multiHandLandmarks && results.multiHandLandmarks.length == 2) {
+                        let sumx = [0, 0], sumy = [0, 0], avgx = [0, 0], avgy = [0, 0];
+                        results.multiHandLandmarks.forEach((landmarks, index) => {
+                            landmarks.forEach(point => {
+                                p = new cv.Point(width*point.x, height*point.y);
+                                cv.circle(img, p, width/100, [255, 0, 0, 255], cv.FILLED);
+                                // 手の中心点を求める。
+                                const {x, y} = point;
+                                sumx[index] = sumx[index] + width*x;
+                                sumy[index] = sumy[index] + height*y;
+                            });
+                            avgx[index] = Math.floor(sumx[index] / landmarks.length);
+                            avgy[index] = Math.floor(sumy[index] / landmarks.length);
+                            // console.log(`length:${landmarks.length},avgx:${avgx}, avgy${avgy}`)
+                            let avgp = new cv.Point(avgx[index], avgy[index])
+                            cv.circle(img, avgp, width/100, [0, 0, 255, 255], cv.FILLED);
                         });
-                        avgx[index] = Math.floor(sumx[index] / landmarks.length);
-                        avgy[index] = Math.floor(sumy[index] / landmarks.length);
-                        // console.log(`length:${landmarks.length},avgx:${avgx}, avgy${avgy}`)
-                        let avgp = new cv.Point(avgx[index], avgy[index])
-                        cv.circle(img, avgp, width/100, [0, 0, 255, 255], cv.FILLED);
-                    });
-                    // 中心との角度計算
-                    let center = [(avgx[0]+avgx[1])/2, (avgy[0]+avgy[1])/2];
-                    let angle;
-                    if (avgx[0] > avgx[1]){
-                        angle = Math.atan2(avgy[0] - center[1], avgx[0] - center[0]);
+                        // 中心との角度計算
+                        let center = [(avgx[0]+avgx[1])/2, (avgy[0]+avgy[1])/2];
+                        let angle;
+                        if (avgx[0] > avgx[1]){
+                            angle = Math.atan2(avgy[0] - center[1], avgx[0] - center[0]);
+                        }
+                        else {
+                            angle = Math.atan2(avgy[1] - center[1], avgx[1] - center[0]);
+                        }
+                        let handSize = 0;
+                        let diff = (x1, y1, x2, y2) => {return ((x1-x2)**2+(y1-y2)**2)**0.5};
+                        results.multiHandLandmarks.forEach((landmarks, index) => {
+                            landmarks.forEach(point => {
+                                handSize = Math.max(handSize, diff(avgx[index], avgy[index], width*point.x, height*point.y));
+                            });
+                        });
+                        console.log(`center x:${center[0]}, y:${center[1]}, avg x:${avgx}, y:${avgy}, angle:${angle}`);
+                        document.getElementById("angle").value = -angle/2;
+                        document.getElementById("speed").value = 70*(handSize/width-0.12);
                     }
                     else {
-                        angle = Math.atan2(avgy[1] - center[1], avgx[1] - center[0]);
+                        document.getElementById("angle").value = 0.95*document.getElementById("angle").value;
+                        document.getElementById("speed").value = 0.95*document.getElementById("speed").value;
                     }
-                    let handSize = 0;
-                    let diff = (x1, y1, x2, y2) => {return ((x1-x2)**2+(y1-y2)**2)**0.5};
-                    results.multiHandLandmarks.forEach((landmarks, index) => {
-                        landmarks.forEach(point => {
-                            handSize = Math.max(handSize, diff(avgx[index], avgy[index], width*point.x, height*point.y));
-                        });
-                    });
-                    console.log(`center x:${center[0]}, y:${center[1]}, avg x:${avgx}, y:${avgy}, angle:${angle}`);
-                    document.getElementById("angle").value = -angle/2;
-                    document.getElementById("speed").value = 70*(handSize/width-0.12);
+                    let M = cv.matFromArray(2, 3, cv.CV_64FC1, [1/3, 0, 0, 0, 1/3, height*2/3]);
+                    let dsize = new cv.Size(width, height);
+                    cv.warpAffine(img, img, M, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
+                    cv.imshow("canvas2", img);
+                    img.delete();
                 }
-                else {
-                    document.getElementById("angle").value = 0.95*document.getElementById("angle").value;
-                    document.getElementById("speed").value = 0.95*document.getElementById("speed").value;
-                }
-                let M = cv.matFromArray(2, 3, cv.CV_64FC1, [1/3, 0, 0, 0, 1/3, height*2/3]);
-                let dsize = new cv.Size(width, height);
-                cv.warpAffine(img, img, M, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
-                cv.imshow("canvas2", img);
-                img.delete();
+
+
+                const hands = new Hands({locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.1.1612238212/${file}`;
+                }});
+                hands.setOptions({
+                    maxNumHands: 2,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+                hands.onResults(onResults);
+
+                const cameraDevice = new Camera(video, {
+                    onFrame: async () => {
+                        await hands.send({image: video});
+                    },
+                    width: 1280,
+                    height: 720
+                });
+                cameraDevice.start();
             }
-
-
-            const hands = new Hands({locateFile: (file) => {
-                return `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.1.1612238212/${file}`;
-            }});
-            hands.setOptions({
-                maxNumHands: 2,
-                minDetectionConfidence: 0.5,
-                minTrackingConfidence: 0.5
-            });
-            hands.onResults(onResults);
-
-            const cameraDevice = new Camera(video, {
-                onFrame: async () => {
-                    await hands.send({image: video});
-                },
-                width: 1280,
-                height: 720
-            });
-            cameraDevice.start();
 
             setPhy();
             setView();
@@ -296,7 +309,7 @@
                 count++;
                 requestAnimationFrame(animate);
                 // 物理エンジンの時間を進める
-                world.step(1/10);
+                world.step(timeStep);
                 viewBody.position.copy(phyBody.position);
                 viewBody.quaternion.copy(phyBody.quaternion);
                 for (var i=0; i<4; i++){
