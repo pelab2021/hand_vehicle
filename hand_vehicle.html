@@ -333,11 +333,14 @@
                 }
 
                 // 前方ベクトルの計算
-                /*
                 let forward = new THREE.Vector4(1, 0, 0, 0);
                 forward.applyMatrix4(viewBody.matrix).normalize();
-                let bodyAngle = Math.atan2(-forward.z, forward.x);
-                */
+                console.log(forward);
+
+                let ratio = 0.9;
+                camera.position.multiplyScalar(ratio);
+                camera.position.add(viewBody.position.clone().add(new THREE.Vector3(-80*forward.x, 50, -80*forward.z)).multiplyScalar(1-ratio));
+                camera.lookAt(viewBody.position);
                 
                 // 前輪で操舵
                 wheelAngle = -Number(document.getElementById("angle").value);
