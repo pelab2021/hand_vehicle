@@ -167,8 +167,13 @@
                         let M = cv.matFromArray(2, 3, cv.CV_64FC1, [1/3, 0, 0, 0, 1/3, height*2/3]);
                         let dsize = new cv.Size(width, height);
                         cv.warpAffine(img, img, M, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
-                        let handle = draw();
-                        handle.copyTo(img.roi(new cv.Rect(width*2/3-height/3, height*2/3, height/3, height/3)));
+                        
+                        let handle = cv.imread(handleImg);
+                        cv.resize(handle, handle, new cv.Size(height/3, height/3));
+                        M = cv.getRotationMatrix2D(new cv.Point(height/6, height/6), document.getElementById("angle").value*360/Math.PI, 1);
+                        cv.warpAffine(handle, handle, M, new cv.Size(height/3, height/3), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
+                        let roi = img.roi(new cv.Rect(width*2/3-height/3, height*2/3, height/3, height/3));
+                        handle.copyTo(roi);
                         let speed = -document.getElementById("speed").value/5;
                         let color = (speed => {
                             if (speed < -0.5)        return [255, speed*512+512, 0, 255];
@@ -180,6 +185,7 @@
                         cv.imshow("canvas2", img);
                         img.delete();
                         handle.delete();
+                        roi.delete();
                     }
 
                     const hands = new Hands({locateFile: (file) => {
@@ -202,16 +208,6 @@
                     cameraDevice.start();
                 }
             };
-
-            function draw(){
-                let width = canvas2.width;
-                let height = canvas2.height;
-                let handle = cv.imread(handleImg);
-                cv.resize(handle, handle, new cv.Size(height/3, height/3));
-                let M = cv.getRotationMatrix2D(new cv.Point(height/6, height/6), document.getElementById("angle").value*360/Math.PI, 1);
-                cv.warpAffine(handle, handle, M, new cv.Size(height/3, height/3), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
-                return handle;
-            }
 
             setPhy();
             setView();
