@@ -66,6 +66,8 @@
             // CG上の平面、本体、車輪
             let viewPlane;
             let viewBody, viewWheels = [undefined, undefined, undefined, undefined];
+            let targetPosition, targetDirection, targetBody, targetWheels = [undefined, undefined, undefined, undefined];
+            let targetRatio = 0;
             let renderer;
             let canvas = document.getElementById("canvas");
             let canvas2 = document.getElementById("canvas2");
@@ -182,6 +184,7 @@
                             else                     return [0, -speed*512+512, 255, 255];
                         })(speed);
                         cv.rectangle(img, new cv.Point(width*(17/48), height*(5/6+speed/6-0.01)), new cv.Point(width*(22/48), height*(5/6+speed/6+0.01)), color, cv.FILLED);
+                        cv.ellipse(img, new cv.Point(width*(40/48), height*(5/6)), new cv.Size(height/6, height/6), 0, 270-targetRatio, 270, [0, 0, 255, 255], cv.FILLED);
                         cv.imshow("canvas2", img);
                         img.delete();
                         handle.delete();
@@ -211,6 +214,7 @@
 
             setPhy();
             setView();
+            createTarget();
             animate();
 
             // 物理エンジンの設定
@@ -320,6 +324,24 @@
                     scene.add(viewWheels[i]);
                 }
 
+                targetBody = new THREE.Mesh(new THREE.CubeGeometry(body_size[0], body_size[1], body_size[2], 10, 10), new THREE.MeshLambertMaterial({
+                    color: 0xff00ff,
+                    opacity: 0.5,
+                    transparent: true
+                }));
+                scene.add(targetBody);
+
+                for (var i=0; i<4; i++){
+                    let geoWheel = new THREE.CylinderGeometry(wheel_size[0], wheel_size[0], wheel_size[1], 100);
+                    geoWheel.rotateX(Math.PI/2);
+                    targetWheels[i] = new THREE.Mesh(geoWheel, new THREE.MeshLambertMaterial({
+                        color: (i<2 ? 0xffff00 : 0x00ffff),
+                        opacity: 0.5,
+                        transparent: true
+                    }));
+                    scene.add(targetWheels[i]);
+                }
+
                 let texture = new THREE.TextureLoader().load("img/check.png");
                 viewPlane = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshPhongMaterial({
                     map: texture
@@ -345,10 +367,23 @@
                 world.step(timeStep);
                 viewBody.position.copy(phyBody.position);
                 viewBody.quaternion.copy(phyBody.quaternion);
-                for (var i=0; i<4; i++){
+                for (let i=0; i<4; i++){
                     viewWheels[i].position.copy(phyWheels[i].position);
                     viewWheels[i].quaternion.copy(phyWheels[i].quaternion);
                 }
+
+                let maxDist = 0;
+                for (let i=0; i<4; i++){
+                    maxDist = Math.max(maxDist, ((x1, y1, x2, y2) => {
+                        return ((x1-x2)**2+(y1-y2)**2)**0.5;
+                    })(viewWheels[i].position.x, viewWheels[i].position.z, targetWheels[i].position.x, targetWheels[i].position.z));
+                }
+                targetRatio += Math.floor(20/maxDist);
+                if (targetRatio > 360){
+                    targetRatio = 0;
+                    createTarget();
+                }
+                console.log(targetRatio);
 
                 // 前方ベクトルの計算
                 let forward = new THREE.Vector4(1, 0, 0, 0);
@@ -371,6 +406,38 @@
                 constraints[1].setMotorSpeed(wheelSpeed);
                 // レンダリング
                 renderer.render(scene, camera);
+            }
+
+            function createTarget(){
+                targetPosition = [10*Math.floor(Math.random()*7)-30, 10*Math.floor(Math.random()*7)-30];
+                targetDirection = Math.floor(Math.random()*4);
+                console.log(targetDirection);
+                targetBody.position.set(targetPosition[0], body_size[1]/2+wheel_size[0]/2, targetPosition[1]);
+                targetBody.rotation.set(0, Math.PI/2*targetDirection, 0);
+                for (let i=0; i<4; i++){
+                    if (targetDirection%2 == 1){
+                        targetWheels[i].rotation.set(0, Math.PI/2, 0);
+                    }
+                    else {
+                        targetWheels[i].rotation.set(0, 0, 0);
+                    }
+                    if (i < 2)    targetWheels[i].position.x = body_size[0]/2-wheel_size[0]/2;
+                    else          targetWheels[i].position.x = -(body_size[0]/2-wheel_size[0]/2);
+                    targetWheels[i].position.y = wheel_size[0]/2;
+                    if (i%2 == 0)    targetWheels[i].position.z = -(body_size[2]/2+wheel_size[1]/2+2);
+                    else             targetWheels[i].position.z = body_size[2]/2+wheel_size[1]/2+2;
+                    if (targetDirection == 1){
+                        [targetWheels[i].position.x, targetWheels[i].position.z] = [targetWheels[i].position.z, -targetWheels[i].position.x]
+                    }
+                    else if (targetDirection == 2){
+                        targetWheels[i].position.x = -targetWheels[i].position.x;
+                        targetWheels[i].position.z = -targetWheels[i].position.z;
+                    }
+                    else if (targetDirection == 3){
+                        [targetWheels[i].position.x, targetWheels[i].position.z] = [-targetWheels[i].position.z, targetWheels[i].position.x]
+                    }
+                    targetWheels[i].position.add(targetBody.position);
+                }
             }
         </script>
     </body>
