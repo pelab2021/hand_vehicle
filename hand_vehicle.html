@@ -57,6 +57,8 @@
             // 物理エンジン上の平面、本体、車輪
             let phyPlane;
             let phyBody, phyWheels = [undefined, undefined, undefined, undefined];
+            let checkNum = 8;
+            let phyCheck = new Array(checkNum);
             let body_size = [20, 8, 12], wheel_size = [3, 2];
             // 前の車輪の本体に対する角度と車輪のスピード
             let wheelAngle = 0.5, wheelSpeed = 3;
@@ -68,6 +70,7 @@
             let viewBody, viewWheels = [undefined, undefined, undefined, undefined];
             let targetPosition, targetDirection, targetBody, targetWheels = [undefined, undefined, undefined, undefined];
             let targetRatio = 0;
+            let viewCheck = new Array(checkNum);
             let renderer;
             let canvas = document.getElementById("canvas");
             let canvas2 = document.getElementById("canvas2");
@@ -259,7 +262,7 @@
                 // 2: 後左, 3: 後右
                 for (var i=0; i<4; i++){
                     phyWheels[i] = new CANNON.Body({mass: 1});
-                    phyWheels[i].mat =  mat;
+                    phyWheels[i].mat = mat;
                     phyWheels[i].addShape(new CANNON.Cylinder(wheel_size[0], wheel_size[0], wheel_size[1], 100));
                     if (i < 2)    phyWheels[i].position.x = body_size[0]/2-wheel_size[0]/2;
                     else          phyWheels[i].position.x = -(body_size[0]/2-wheel_size[0]/2);
@@ -275,12 +278,30 @@
                 constraints.push(new CANNON.HingeConstraint(phyBody, phyWheels[1],  {pivotA: new CANNON.Vec3(body_size[0]/2-wheel_size[0]/2, -body_size[1]/2+wheel_size[0]/2, body_size[2]/2+wheel_size[1]/2+2), axisA: new CANNON.Vec3(0, 0, 1),  pivotB: zero, axisB: new CANNON.Vec3(0, 0, 1)}));
                 constraints.push(new CANNON.HingeConstraint(phyBody, phyWheels[2],  {pivotA: new CANNON.Vec3(-(body_size[0]/2-wheel_size[0]/2), -body_size[1]/2+wheel_size[0]/2, -(body_size[2]/2+wheel_size[1]/2+2)), axisA: new CANNON.Vec3(0, 0, 1),  pivotB: zero, axisB: new CANNON.Vec3(0, 0, 1)}));
                 constraints.push(new CANNON.HingeConstraint(phyBody, phyWheels[3],  {pivotA: new CANNON.Vec3(-(body_size[0]/2-wheel_size[0]/2), -body_size[1]/2+wheel_size[0]/2, body_size[2]/2+wheel_size[1]/2+2), axisA: new CANNON.Vec3(0, 0, 1),  pivotB: zero, axisB: new CANNON.Vec3(0, 0, 1)}));
-                for (var i=0; i<4; i++){
+                for (let i=0; i<4; i++){
                     world.addConstraint(constraints[i]);
                 }
                 // 前輪で駆動
                 constraints[0].enableMotor();
                 constraints[1].enableMotor();
+
+                let nextCheck = 0;
+                for (let i=0; i<checkNum; i++){
+                    phyCheck[i] = new CANNON.Body({mass: 0});
+                    phyCheck[i].mat =  mat;
+                    phyCheck[i].addShape(new CANNON.Sphere(1));
+                    phyCheck[i].position.set(30*Math.sin(2*Math.PI*i/checkNum), 5, 30*Math.cos(2*Math.PI*i/checkNum));
+                    phyCheck[i].collisionResponse = 0;
+                    world.add(phyCheck[i]);
+                    phyCheck[i].addEventListener("collide", e => {
+                        if (nextCheck < checkNum && (e.body.id == phyCheck[nextCheck].id || e.target.id == phyCheck[nextCheck].id)){
+                            viewCheck[nextCheck].visible = false;
+                            nextCheck++;
+                            viewCheck[nextCheck%checkNum].material.needsUpdate = true;
+                            viewCheck[nextCheck%checkNum].material.setValues({color: 0x0000ff});;
+                        }
+                    });
+                }
             }
 
             // CGの設定
@@ -349,6 +370,16 @@
                 viewPlane.rotation.x = -Math.PI/2;
                 viewPlane.receiveShadow = true;
                 scene.add(viewPlane);
+
+                for (var i=0; i<checkNum; i++){
+                    let geoCheck = new THREE.SphereGeometry(1, 10, 10);
+                    viewCheck[i] = new THREE.Mesh(geoCheck, new THREE.MeshLambertMaterial({
+                        color: (i==0 ? 0x0000ff : 0xff0000)
+                    }));
+                    viewCheck[i].castShadow = true;
+                    viewCheck[i].receiveShadow = true;
+                    scene.add(viewCheck[i]);
+                }
                 
                 renderer = new THREE.WebGLRenderer({canvas: canvas});
                 renderer.setSize(canvas.width, canvas.height);
@@ -371,6 +402,10 @@
                     viewWheels[i].position.copy(phyWheels[i].position);
                     viewWheels[i].quaternion.copy(phyWheels[i].quaternion);
                 }
+                
+                for (let i=0; i<checkNum; i++){
+                    viewCheck[i].position.copy(phyCheck[i].position);
+                }
 
                 let maxDist = 0;
                 for (let i=0; i<4; i++){
@@ -383,7 +418,6 @@
                     targetRatio = 0;
                     createTarget();
                 }
-                console.log(targetRatio);
 
                 // 前方ベクトルの計算
                 let forward = new THREE.Vector4(1, 0, 0, 0);
@@ -411,7 +445,6 @@
             function createTarget(){
                 targetPosition = [10*Math.floor(Math.random()*7)-30, 10*Math.floor(Math.random()*7)-30];
                 targetDirection = Math.floor(Math.random()*4);
-                console.log(targetDirection);
                 targetBody.position.set(targetPosition[0], body_size[1]/2+wheel_size[0]/2, targetPosition[1]);
                 targetBody.rotation.set(0, Math.PI/2*targetDirection, 0);
                 for (let i=0; i<4; i++){
