@@ -18,13 +18,11 @@
                 right: 0;
                 margin: auto;
             }
-            #start {
+            .course {
                 position: absolute;
-                left: 33%;
-                top: 33%;
-                width: 33%;
-                height: 33%;
-                font-size: 5vw;
+                width: 30%;
+                height: 10%;
+                font-size: 3vw;
             }
 
         </style>
@@ -34,6 +32,7 @@
         
         <script src="https://docs.opencv.org/master/opencv.js"></script>
         <script src="js/three.min.js"></script>
+        <script src="js/ColladaLoader.js"></script>
         <script src="js/cannon.min.js"></script>
         
         <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
@@ -45,7 +44,10 @@
         <div id="canvas_wrapper">
             <canvas id="canvas"></canvas>
             <canvas id="canvas2" style="transform: scale(-1, 1); opacity: 1.0;"></canvas>
-            <button id="start" type="button" class="btn btn-primary">START</button>
+            <button id="parking" type="button" style="top: 20%; left: 30%; width: 40%" class="btn btn-success course">Parking</button>
+            <button id="course1" type="button" style="top: 30%; left: 30%;" class="btn btn-primary course">Course 1</button>
+            <button id="course2" type="button" style="top: 40%; left: 35%;" class="btn btn-warning course">Course 2</button>
+            <button id="course3" type="button" style="top: 50%; left: 40%;" class="btn btn-danger course">Course 3</button>
         </div>
         <input type="range" id="angle" class="custom-range" min="-0.75" max="0.75" step="0.01" value="0">
         <input type="range" id="speed" class="custom-range" min="-5" max="5" step="0.01" value="0">
@@ -56,10 +58,10 @@
             let timeStep = 1/10;
             // 物理エンジン上の平面、本体、車輪
             let phyPlane;
-            let phyBody, phyWheels = [undefined, undefined, undefined, undefined];
+            let phyBody, phyWheels = new Array(4);
             let checkNum = 8;
             let phyCheck = new Array(checkNum);
-            let body_size = [20, 8, 12], wheel_size = [3, 2];
+            let bodySize = [24, 8, 8], phyBodySize = [35, 15, 16], wheelSize = [3.5, 2];
             // 前の車輪の本体に対する角度と車輪のスピード
             let wheelAngle = 0.5, wheelSpeed = 3;
             // 本体と車輪の拘束
@@ -67,8 +69,9 @@
             let scene;
             // CG上の平面、本体、車輪
             let viewPlane;
-            let viewBody, viewWheels = [undefined, undefined, undefined, undefined];
-            let targetPosition, targetDirection, targetBody, targetWheels = [undefined, undefined, undefined, undefined];
+            let viewBody, viewWheels = new Array(8);
+            let viewCar;
+            let targetPosition, targetDirection, targetBody, targetWheels = new Array(4);
             let targetRatio = 0;
             let viewCheck = new Array(checkNum);
             let renderer;
@@ -102,128 +105,152 @@
             window.addEventListener('resize', onWindowResize, false);
             onWindowResize();
 
-            document.getElementById("start").onclick = async () => {
-                document.getElementById("start").style.display = "none";
-                if (navigator.userAgent.match(/iPhone|Android.+Mobile/)){
-                    if (typeof DeviceMotionEvent.requestPermission === 'function'){
-                        await DeviceMotionEvent.requestPermission();
-                    }
-                    timeStep = 1/30;
-                    window.addEventListener("devicemotion", e => {
-                        let accVec = e.accelerationIncludingGravity;
-                        let [x, y, z] = [accVec.x, accVec.y, accVec.z];
-                        let angle = Math.atan(y/x);
-                        document.getElementById("angle").value = 4*angle;
-                        document.getElementById("speed").value = z;
-                    });
-                }
-                else {
-                    const video = document.getElementById("video");
-                    video.style.display = "none";
-
-                    function onResults(results) {
-                        let width = canvas2.width;
-                        let height = canvas2.height;
-                        let img = new cv.Mat(height, width, cv.CV_8UC4);
-                        context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, width, height);
-                        img.data.set(context.getImageData(0, 0, width, height).data);
-                        context.clearRect(0, 0, width, height);
-                        if (results.multiHandLandmarks && results.multiHandLandmarks.length == 2) {
-                            let sumx = [0, 0], sumy = [0, 0], avgx = [0, 0], avgy = [0, 0];
-                            results.multiHandLandmarks.forEach((landmarks, index) => {
-                                landmarks.forEach(point => {
-                                    p = new cv.Point(width*point.x, height*point.y);
-                                    cv.circle(img, p, width/100, [255, 0, 0, 255], cv.FILLED);
-                                    // 手の中心点を求める。
-                                    const {x, y} = point;
-                                    sumx[index] = sumx[index] + width*x;
-                                    sumy[index] = sumy[index] + height*y;
-                                });
-                                avgx[index] = Math.floor(sumx[index] / landmarks.length);
-                                avgy[index] = Math.floor(sumy[index] / landmarks.length);
-                                // console.log(`length:${landmarks.length},avgx:${avgx}, avgy${avgy}`)
-                                let avgp = new cv.Point(avgx[index], avgy[index])
-                                cv.circle(img, avgp, width/100, [0, 0, 255, 255], cv.FILLED);
-                            });
-                            // 中心との角度計算
-                            let center = [(avgx[0]+avgx[1])/2, (avgy[0]+avgy[1])/2];
-                            let angle;
-                            if (avgx[0] > avgx[1]){
-                                angle = Math.atan2(avgy[0] - center[1], avgx[0] - center[0]);
-                            }
-                            else {
-                                angle = Math.atan2(avgy[1] - center[1], avgx[1] - center[0]);
-                            }
-                            let handSize = 0;
-                            let diff = (x1, y1, x2, y2) => {return ((x1-x2)**2+(y1-y2)**2)**0.5};
-                            results.multiHandLandmarks.forEach((landmarks, index) => {
-                                landmarks.forEach(point => {
-                                    handSize = Math.max(handSize, diff(avgx[index], avgy[index], width*point.x, height*point.y));
-                                });
-                            });
-                            console.log(`center x:${center[0]}, y:${center[1]}, avg x:${avgx}, y:${avgy}, angle:${angle}`);
-                            document.getElementById("angle").value = -angle/2;
-                            document.getElementById("speed").value = 70*(handSize/width-0.12);
-                        }
-                        else {
-                            document.getElementById("angle").value = 0.95*document.getElementById("angle").value;
-                            document.getElementById("speed").value = 0.95*document.getElementById("speed").value;
-                        }
-                        let M = cv.matFromArray(2, 3, cv.CV_64FC1, [1/3, 0, 0, 0, 1/3, height*2/3]);
-                        let dsize = new cv.Size(width, height);
-                        cv.warpAffine(img, img, M, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
-                        
-                        let handle = cv.imread(handleImg);
-                        cv.resize(handle, handle, new cv.Size(height/3, height/3));
-                        M = cv.getRotationMatrix2D(new cv.Point(height/6, height/6), document.getElementById("angle").value*360/Math.PI, 1);
-                        cv.warpAffine(handle, handle, M, new cv.Size(height/3, height/3), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
-                        let roi = img.roi(new cv.Rect(width*2/3-height/3, height*2/3, height/3, height/3));
-                        handle.copyTo(roi);
-                        let speed = -document.getElementById("speed").value/5;
-                        let color = (speed => {
-                            if (speed < -0.5)        return [255, speed*512+512, 0, 255];
-                            else if (speed < 0)      return [-speed*512, 255, 0, 255];
-                            else if (speed < 0.5)    return [0, 255, speed*512, 255];
-                            else                     return [0, -speed*512+512, 255, 255];
-                        })(speed);
-                        cv.rectangle(img, new cv.Point(width*(17/48), height*(5/6+speed/6-0.01)), new cv.Point(width*(22/48), height*(5/6+speed/6+0.01)), color, cv.FILLED);
-                        cv.ellipse(img, new cv.Point(width*(40/48), height*(5/6)), new cv.Size(height/6, height/6), 0, 270-targetRatio, 270, [0, 0, 255, 255], cv.FILLED);
-                        cv.imshow("canvas2", img);
-                        img.delete();
-                        handle.delete();
-                        roi.delete();
-                    }
-
-                    const hands = new Hands({locateFile: (file) => {
-                        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-                    }});
-                    hands.setOptions({
-                        maxNumHands: 2,
-                        minDetectionConfidence: 0.5,
-                        minTrackingConfidence: 0.5
-                    });
-                    hands.onResults(onResults);
-
-                    const cameraDevice = new Camera(video, {
-                        onFrame: async () => {
-                            await hands.send({image: video});
-                        },
-                        width: 1280,
-                        height: 720
-                    });
-                    cameraDevice.start();
-                }
+            let mode, operation=false;
+            document.getElementById("parking").onclick = () => {
+                mode = 0;
+                start();
+            };
+            document.getElementById("course1").onclick = () => {
+                mode = 1;
+                start();
+            };
+            document.getElementById("course2").onclick = () => {
+                mode = 2;
+                start();
+            };
+            document.getElementById("course3").onclick = () => {
+                mode = 3;
+                start();
             };
 
-            setPhy();
-            setView();
-            createTarget();
-            animate();
+            function start(){
+                document.getElementById("parking").style.display = "none";
+                document.getElementById("course1").style.display = "none";
+                document.getElementById("course2").style.display = "none";
+                document.getElementById("course3").style.display = "none";
+                setPhy();
+                setView();
+                if (mode == 0)    createTarget();
+                animate();
+            }
+
+            if (navigator.userAgent.match(/iPhone|Android.+Mobile/)){
+                if (typeof DeviceMotionEvent.requestPermission === 'function'){
+                    (async () => await DeviceMotionEvent.requestPermission())();
+                }
+                timeStep = 1/30;
+                window.addEventListener("devicemotion", e => {
+                    let accVec = e.accelerationIncludingGravity;
+                    let [x, y, z] = [accVec.x, accVec.y, accVec.z];
+                    let angle = Math.atan(y/x);
+                    wheelAngle = -4*angle;
+                    wheelSpeed = z;
+                });
+                operation = true;
+            }
+            else {
+                const video = document.getElementById("video");
+                video.style.display = "none";
+
+                function onResults(results) {
+                    operation = true;
+                    let width = canvas2.width;
+                    let height = canvas2.height;
+                    let img = new cv.Mat(height, width, cv.CV_8UC4);
+                    context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, width, height);
+                    img.data.set(context.getImageData(0, 0, width, height).data);
+                    context.clearRect(0, 0, width, height);
+                    if (results.multiHandLandmarks && results.multiHandLandmarks.length == 2) {
+                        let sumx = [0, 0], sumy = [0, 0], avgx = [0, 0], avgy = [0, 0];
+                        results.multiHandLandmarks.forEach((landmarks, index) => {
+                            landmarks.forEach(point => {
+                                p = new cv.Point(width*point.x, height*point.y);
+                                cv.circle(img, p, width/100, [255, 0, 0, 255], cv.FILLED);
+                                // 手の中心点を求める。
+                                const {x, y} = point;
+                                sumx[index] = sumx[index] + width*x;
+                                sumy[index] = sumy[index] + height*y;
+                            });
+                            avgx[index] = Math.floor(sumx[index] / landmarks.length);
+                            avgy[index] = Math.floor(sumy[index] / landmarks.length);
+                            // console.log(`length:${landmarks.length},avgx:${avgx}, avgy${avgy}`)
+                            let avgp = new cv.Point(avgx[index], avgy[index])
+                            cv.circle(img, avgp, width/100, [0, 0, 255, 255], cv.FILLED);
+                        });
+                        // 中心との角度計算
+                        let center = [(avgx[0]+avgx[1])/2, (avgy[0]+avgy[1])/2];
+                        let angle;
+                        if (avgx[0] > avgx[1]){
+                            angle = Math.atan2(avgy[0] - center[1], avgx[0] - center[0]);
+                        }
+                        else {
+                            angle = Math.atan2(avgy[1] - center[1], avgx[1] - center[0]);
+                        }
+                        let handSize = 0;
+                        let diff = (x1, y1, x2, y2) => {return ((x1-x2)**2+(y1-y2)**2)**0.5};
+                        results.multiHandLandmarks.forEach((landmarks, index) => {
+                            landmarks.forEach(point => {
+                                handSize = Math.max(handSize, diff(avgx[index], avgy[index], width*point.x, height*point.y));
+                            });
+                        });
+                        console.log(`center x:${center[0]}, y:${center[1]}, avg x:${avgx}, y:${avgy}, angle:${angle}`);
+                        wheelAngle = angle/2;
+                        wheelSpeed = 70*(handSize/width-0.12);
+                    }
+                    else {
+                        wheelAngle *= 0.95;
+                        wheelSpeed *= 0.95;
+                    }
+                    let M = cv.matFromArray(2, 3, cv.CV_64FC1, [1/3, 0, 0, 0, 1/3, height*2/3]);
+                    let dsize = new cv.Size(width, height);
+                    cv.warpAffine(img, img, M, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
+                    
+                    let handle = cv.imread(handleImg);
+                    cv.resize(handle, handle, new cv.Size(height/3, height/3));
+                    M = cv.getRotationMatrix2D(new cv.Point(height/6, height/6), -wheelAngle*360/Math.PI, 1);
+                    cv.warpAffine(handle, handle, M, new cv.Size(height/3, height/3), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
+                    let roi = img.roi(new cv.Rect(width*2/3-height/3, height*2/3, height/3, height/3));
+                    handle.copyTo(roi);
+                    let speed = -wheelSpeed/5;
+                    let color = (speed => {
+                        if (speed < -0.5)        return [255, speed*512+512, 0, 255];
+                        else if (speed < 0)      return [-speed*512, 255, 0, 255];
+                        else if (speed < 0.5)    return [0, 255, speed*512, 255];
+                        else                     return [0, -speed*512+512, 255, 255];
+                    })(speed);
+                    cv.rectangle(img, new cv.Point(width*(17/48), height*(5/6+speed/6-0.01)), new cv.Point(width*(22/48), height*(5/6+speed/6+0.01)), color, cv.FILLED);
+                    cv.ellipse(img, new cv.Point(width*(40/48), height*(5/6)), new cv.Size(height/6, height/6), 0, 270-targetRatio, 270, [0, 0, 255, 255], cv.FILLED);
+                    cv.imshow("canvas2", img);
+                    img.delete();
+                    handle.delete();
+                    roi.delete();
+                }
+
+                const hands = new Hands({locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                }});
+                hands.setOptions({
+                    maxNumHands: 2,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+                hands.onResults(onResults);
+
+                const cameraDevice = new Camera(video, {
+                    onFrame: async () => {
+                        await hands.send({image: video});
+                    },
+                    width: 1280,
+                    height: 720
+                });
+                console.log(cameraDevice);
+                cameraDevice.start();
+            }
 
             // 物理エンジンの設定
             function setPhy() {
-                document.getElementById("angle").value = 0;
-                document.getElementById("speed").value = 0;
+                wheelAngle = 0;
+                wheelSpeed = 0;
                 // 物理世界を生成
                 world = new CANNON.World();
                 // 重力を設定
@@ -251,7 +278,7 @@
                 // Boxのシェイプの剛体を質量10で生成
                 phyBody = new CANNON.Body({mass: 10});
                 phyBody.material = mat;
-                phyBody.addShape(new CANNON.Box(new CANNON.Vec3(body_size[0]/2, body_size[1]/2, body_size[2]/2)));
+                phyBody.addShape(new CANNON.Box(new CANNON.Vec3(bodySize[0]/2, bodySize[1]/2, bodySize[2]/2)));
                 phyBody.position.y = 10;
                 phyBody.velocity.set(-3, 0, 0);
                 // 物理世界に追加
@@ -263,21 +290,21 @@
                 for (var i=0; i<4; i++){
                     phyWheels[i] = new CANNON.Body({mass: 1});
                     phyWheels[i].mat = mat;
-                    phyWheels[i].addShape(new CANNON.Cylinder(wheel_size[0], wheel_size[0], wheel_size[1], 100));
-                    if (i < 2)    phyWheels[i].position.x = body_size[0]/2-wheel_size[0]/2;
-                    else          phyWheels[i].position.x = -(body_size[0]/2-wheel_size[0]/2);
-                    phyWheels[i].position.y = 10-body_size[1]/2+wheel_size[0]/2;
-                    if (i%2 == 0)    phyWheels[i].position.z = -(body_size[2]/2+wheel_size[1]/2+2);
-                    else             phyWheels[i].position.z = body_size[2]/2+wheel_size[1]/2+2;
+                    phyWheels[i].addShape(new CANNON.Cylinder(wheelSize[0], wheelSize[0], wheelSize[1], 100));
+                    if (i < 2)    phyWheels[i].position.x = bodySize[0]/2-wheelSize[0]/2;
+                    else          phyWheels[i].position.x = -(bodySize[0]/2-wheelSize[0]/2);
+                    phyWheels[i].position.y = 10-bodySize[1]/2+wheelSize[0]/2;
+                    if (i%2 == 0)    phyWheels[i].position.z = -(bodySize[2]/2+wheelSize[1]/2+2);
+                    else             phyWheels[i].position.z = bodySize[2]/2+wheelSize[1]/2+2;
                     world.add(phyWheels[i]);
                 }
 
                 // 本体と車輪の拘束を設定
                 let zero = new CANNON.Vec3();
-                constraints.push(new CANNON.HingeConstraint(phyBody, phyWheels[0],  {pivotA: new CANNON.Vec3(body_size[0]/2-wheel_size[0]/2, -body_size[1]/2+wheel_size[0]/2, -(body_size[2]/2+wheel_size[1]/2+2)), axisA: new CANNON.Vec3(0, 0, 1),  pivotB: zero, axisB: new CANNON.Vec3(0, 0, 1)}));
-                constraints.push(new CANNON.HingeConstraint(phyBody, phyWheels[1],  {pivotA: new CANNON.Vec3(body_size[0]/2-wheel_size[0]/2, -body_size[1]/2+wheel_size[0]/2, body_size[2]/2+wheel_size[1]/2+2), axisA: new CANNON.Vec3(0, 0, 1),  pivotB: zero, axisB: new CANNON.Vec3(0, 0, 1)}));
-                constraints.push(new CANNON.HingeConstraint(phyBody, phyWheels[2],  {pivotA: new CANNON.Vec3(-(body_size[0]/2-wheel_size[0]/2), -body_size[1]/2+wheel_size[0]/2, -(body_size[2]/2+wheel_size[1]/2+2)), axisA: new CANNON.Vec3(0, 0, 1),  pivotB: zero, axisB: new CANNON.Vec3(0, 0, 1)}));
-                constraints.push(new CANNON.HingeConstraint(phyBody, phyWheels[3],  {pivotA: new CANNON.Vec3(-(body_size[0]/2-wheel_size[0]/2), -body_size[1]/2+wheel_size[0]/2, body_size[2]/2+wheel_size[1]/2+2), axisA: new CANNON.Vec3(0, 0, 1),  pivotB: zero, axisB: new CANNON.Vec3(0, 0, 1)}));
+                constraints.push(new CANNON.HingeConstraint(phyBody, phyWheels[0],  {pivotA: new CANNON.Vec3(bodySize[0]/2-wheelSize[0]/2, -bodySize[1]/2+wheelSize[0]/2, -(bodySize[2]/2+wheelSize[1]/2+2)), axisA: new CANNON.Vec3(0, 0, 1),  pivotB: zero, axisB: new CANNON.Vec3(0, 0, 1)}));
+                constraints.push(new CANNON.HingeConstraint(phyBody, phyWheels[1],  {pivotA: new CANNON.Vec3(bodySize[0]/2-wheelSize[0]/2, -bodySize[1]/2+wheelSize[0]/2, bodySize[2]/2+wheelSize[1]/2+2), axisA: new CANNON.Vec3(0, 0, 1),  pivotB: zero, axisB: new CANNON.Vec3(0, 0, 1)}));
+                constraints.push(new CANNON.HingeConstraint(phyBody, phyWheels[2],  {pivotA: new CANNON.Vec3(-(bodySize[0]/2-wheelSize[0]/2), -bodySize[1]/2+wheelSize[0]/2, -(bodySize[2]/2+wheelSize[1]/2+2)), axisA: new CANNON.Vec3(0, 0, 1),  pivotB: zero, axisB: new CANNON.Vec3(0, 0, 1)}));
+                constraints.push(new CANNON.HingeConstraint(phyBody, phyWheels[3],  {pivotA: new CANNON.Vec3(-(bodySize[0]/2-wheelSize[0]/2), -bodySize[1]/2+wheelSize[0]/2, bodySize[2]/2+wheelSize[1]/2+2), axisA: new CANNON.Vec3(0, 0, 1),  pivotB: zero, axisB: new CANNON.Vec3(0, 0, 1)}));
                 for (let i=0; i<4; i++){
                     world.addConstraint(constraints[i]);
                 }
@@ -327,25 +354,49 @@
                 let amb = new THREE.AmbientLight(0x999999);
                 scene.add(amb);
 
-                viewBody = new THREE.Mesh(new THREE.CubeGeometry(body_size[0], body_size[1], body_size[2], 10, 10), new THREE.MeshLambertMaterial({
+                let loader = new THREE.ColladaLoader();
+                loader.load('./img/Car.dae', (collada) => {
+                    viewCar = collada.scene;
+                    viewCar.scale.set(8, 8, 8);
+                    //viewCar[i].castShadow = true;
+                    //viewCar[i].receiveShadow = true;
+                    viewCar.traverse(function(child) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    });
+                    scene.add(viewCar);
+                });
+
+                for (var i=0; i<4; i++){
+                    let geoWheel = new THREE.CylinderGeometry(wheelSize[0], wheelSize[0], wheelSize[1], 100);
+                    geoWheel.rotateX(Math.PI/2);
+                    viewWheels[i] = new THREE.Mesh(geoWheel, new THREE.MeshLambertMaterial({
+                        color: 0x000000
+                    }));
+                    viewWheels[i].castShadow = true;
+                    viewWheels[i].receiveShadow = true;
+                    scene.add(viewWheels[i]);
+
+                    geoWheel = new THREE.CylinderGeometry(0.6*wheelSize[0], 0.6*wheelSize[0], wheelSize[1]*1.1, 100);
+                    geoWheel.rotateX(Math.PI/2);
+                    viewWheels[i+4] = new THREE.Mesh(geoWheel, new THREE.MeshLambertMaterial({
+                        color: 0xaaaaaa
+                    }));
+                    viewWheels[i+4].castShadow = true;
+                    viewWheels[i+4].receiveShadow = true;
+                    scene.add(viewWheels[i+4]);
+                }
+
+                /*
+                viewBody = new THREE.Mesh(new THREE.CubeGeometry(bodySize[0], bodySize[1], bodySize[2], 10, 10), new THREE.MeshLambertMaterial({
                     color: 0xff00ff
                 }));
                 viewBody.castShadow = true;
                 viewBody.receiveShadow = true;
                 scene.add(viewBody);
+                */
 
-                for (var i=0; i<4; i++){
-                    let geoWheel = new THREE.CylinderGeometry(wheel_size[0], wheel_size[0], wheel_size[1], 100);
-                    geoWheel.rotateX(Math.PI/2);
-                    viewWheels[i] = new THREE.Mesh(geoWheel, new THREE.MeshLambertMaterial({
-                        color: (i<2 ? 0xffff00 : 0x00ffff)
-                    }));
-                    viewWheels[i].castShadow = true;
-                    viewWheels[i].receiveShadow = true;
-                    scene.add(viewWheels[i]);
-                }
-
-                targetBody = new THREE.Mesh(new THREE.CubeGeometry(body_size[0], body_size[1], body_size[2], 10, 10), new THREE.MeshLambertMaterial({
+                targetBody = new THREE.Mesh(new THREE.CubeGeometry(bodySize[0], bodySize[1], bodySize[2], 10, 10), new THREE.MeshLambertMaterial({
                     color: 0xff00ff,
                     opacity: 0.5,
                     transparent: true
@@ -353,7 +404,7 @@
                 scene.add(targetBody);
 
                 for (var i=0; i<4; i++){
-                    let geoWheel = new THREE.CylinderGeometry(wheel_size[0], wheel_size[0], wheel_size[1], 100);
+                    let geoWheel = new THREE.CylinderGeometry(wheelSize[0], wheelSize[0], wheelSize[1], 100);
                     geoWheel.rotateX(Math.PI/2);
                     targetWheels[i] = new THREE.Mesh(geoWheel, new THREE.MeshLambertMaterial({
                         color: (i<2 ? 0xffff00 : 0x00ffff),
@@ -395,12 +446,28 @@
                 count++;
                 requestAnimationFrame(animate);
                 // 物理エンジンの時間を進める
-                world.step(timeStep);
+                if (operation)    world.step(timeStep);
+
+                /*
                 viewBody.position.copy(phyBody.position);
                 viewBody.quaternion.copy(phyBody.quaternion);
+                */
+                
+                viewCar.position.copy(phyBody.position);
+                viewCar.quaternion.copy(phyBody.quaternion);
+                var rot = new THREE.Quaternion();
+                rot.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI/2);
+                viewCar.quaternion.multiply(rot);
+                rot.setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI/2);
+                viewCar.quaternion.multiply(rot);
+                //viewCar.rotation.set(-Math.PI/2, 0, Math.PI/2);
+                viewCar.position.add(new THREE.Vector3(0, -5, 0));
+                
                 for (let i=0; i<4; i++){
                     viewWheels[i].position.copy(phyWheels[i].position);
                     viewWheels[i].quaternion.copy(phyWheels[i].quaternion);
+                    viewWheels[i+4].position.copy(phyWheels[i].position);
+                    viewWheels[i+4].quaternion.copy(phyWheels[i].quaternion);
                 }
                 
                 for (let i=0; i<checkNum; i++){
@@ -421,19 +488,17 @@
 
                 // 前方ベクトルの計算
                 let forward = new THREE.Vector4(1, 0, 0, 0);
-                forward.applyMatrix4(viewBody.matrix).normalize();
+                forward.applyMatrix4(viewCar.matrix).normalize();
 
                 /*
                 let ratio = 0.9;
                 camera.position.multiplyScalar(ratio);
-                camera.position.add(viewBody.position.clone().add(new THREE.Vector3(-80*forward.x, 50, -80*forward.z)).multiplyScalar(1-ratio));
+                camera.position.add(viewCar.position.clone().add(new THREE.Vector3(-80*forward.x, 50, -80*forward.z)).multiplyScalar(1-ratio));
                 */
-                camera.position.set(viewBody.position.x-60, viewBody.position.y+60, viewBody.position.z+60);
-                camera.lookAt(viewBody.position);
+                camera.position.set(viewCar.position.x-60, viewCar.position.y+60, viewCar.position.z+60);
+                camera.lookAt(viewCar.position);
                 
                 // 前輪で操舵
-                wheelAngle = -Number(document.getElementById("angle").value);
-                wheelSpeed = Number(document.getElementById("speed").value);
                 constraints[0].axisA = new CANNON.Vec3(Math.sin(wheelAngle), 0, Math.cos(wheelAngle));
                 constraints[1].axisA = new CANNON.Vec3(Math.sin(wheelAngle), 0, Math.cos(wheelAngle));
                 constraints[0].setMotorSpeed(wheelSpeed);
@@ -445,7 +510,7 @@
             function createTarget(){
                 targetPosition = [10*Math.floor(Math.random()*7)-30, 10*Math.floor(Math.random()*7)-30];
                 targetDirection = Math.floor(Math.random()*4);
-                targetBody.position.set(targetPosition[0], body_size[1]/2+wheel_size[0]/2, targetPosition[1]);
+                targetBody.position.set(targetPosition[0], bodySize[1]/2+wheelSize[0]/2, targetPosition[1]);
                 targetBody.rotation.set(0, Math.PI/2*targetDirection, 0);
                 for (let i=0; i<4; i++){
                     if (targetDirection%2 == 1){
@@ -454,11 +519,11 @@
                     else {
                         targetWheels[i].rotation.set(0, 0, 0);
                     }
-                    if (i < 2)    targetWheels[i].position.x = body_size[0]/2-wheel_size[0]/2;
-                    else          targetWheels[i].position.x = -(body_size[0]/2-wheel_size[0]/2);
-                    targetWheels[i].position.y = wheel_size[0]/2-body_size[1]/2;
-                    if (i%2 == 0)    targetWheels[i].position.z = -(body_size[2]/2+wheel_size[1]/2+2);
-                    else             targetWheels[i].position.z = body_size[2]/2+wheel_size[1]/2+2;
+                    if (i < 2)    targetWheels[i].position.x = bodySize[0]/2-wheelSize[0]/2;
+                    else          targetWheels[i].position.x = -(bodySize[0]/2-wheelSize[0]/2);
+                    targetWheels[i].position.y = wheelSize[0]/2-bodySize[1]/2;
+                    if (i%2 == 0)    targetWheels[i].position.z = -(bodySize[2]/2+wheelSize[1]/2+2);
+                    else             targetWheels[i].position.z = bodySize[2]/2+wheelSize[1]/2+2;
                     if (targetDirection == 1){
                         [targetWheels[i].position.x, targetWheels[i].position.z] = [targetWheels[i].position.z, -targetWheels[i].position.x]
                     }
