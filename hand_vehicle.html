@@ -39,7 +39,7 @@
         <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
         <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
         <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-        <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.1.1617147326/hands.js" crossorigin="anonymous"></script>
     </head>
     <body>
         <div id="canvas_wrapper">
@@ -321,7 +321,7 @@
                 }
 
                 const hands = new Hands({locateFile: (file) => {
-                    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.1.1617147326/${file}`;
                 }});
                 hands.setOptions({
                     maxNumHands: 2,
