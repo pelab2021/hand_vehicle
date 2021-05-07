@@ -2,7 +2,7 @@
 <html lang="ja">
     <head>
         <meta charset="utf-8">
-        <title>画像処理音声認識_2</title>
+        <title>画像処理レーシング</title>
         <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css" integrity="sha384-9aIt2nRpC12Uk9gS9baDl411NQApFmC26EwAOH8WgZl5MYYxFfc+NcPb1dKGj7Sk" crossorigin="anonymous">
         <style type="text/css">
             html {
@@ -50,12 +50,42 @@
             <button id="course1" type="button" style="top: 30%; left: 30%;" class="btn btn-primary course">Course 1</button>
             <button id="course2" type="button" style="top: 40%; left: 35%;" class="btn btn-warning course">Course 2</button>
             <button id="course3" type="button" style="top: 50%; left: 40%;" class="btn btn-danger course">Course 3</button>
+            <button id="restart" type="button" style="width: 16%; top: 56%; right: 0%; display: none;" class="btn btn-primary course">Restart</button>
         </div>
         <video id="video"></video>
+        <div class="container-fluid">
+            <div class="row">
+              <div class="col-2"></div>
+              <div class="col-8">
+                <br>
+                <h1>遊び方</h1>
+                <center>
+                    <video id="how_to_play" src="img/how_to_play.mp4" controls></video>
+                </center>
+                <br>
+                <p>
+                カメラの画像から両手の角度と手の大きさを検出し、車のハンドルとアクセルを操作します。<br>
+                両手を傾けると連動してハンドルが傾き、手を広げる(あるいはカメラに近づける)と加速、手を握る(あるいはカメラから遠ざける)と減速します。
+                </p>
+                <p>
+                Parking, Course 1~3のゲームモードがあります。<br>
+                Parkingでは車を半透明のターゲットに合わせて駐車すること、Course 1~3では各コースに配置された赤色と青色のチェックポイントを全て通過することを目標とします。
+                </p>
+                <p>
+                ※カメラを使用できるPCのChrome/Firefoxでの実行を推奨いたします。<br>
+                ※PCの性能によって、動作が遅い場合があります。
+                </p>
+                <center>
+                    <iframe src="https://docs.google.com/forms/d/e/1FAIpQLSephYXm6roopJ-jU5LDxg8tg-I65UAZJ92zN0rKepJuD3Ytxg/viewform?embedded=true" width="640" height="640" frameborder="0" marginheight="0" marginwidth="0">読み込んでいます…</iframe>
+                </center>
+              </div>
+              <div class="col-2"></div>
+            </div>
+        </div>
         <script>
             let count = 0;
             let world;
-            let timeStep = 1/10;
+            let timeStep = 1/20;
             // 物理エンジン上の平面、本体、車輪
             let phyPlane;
             let phyCar, phyBody, phyWheels = new Array(4);
@@ -86,6 +116,8 @@
             let planeSize;
             let carPosition;
             let CheckPosition;
+            let carMode = 0;
+            let speedUp = 0;
 
             let handleImg = new Image();
             handleImg.src = "img/handle.png";
@@ -95,6 +127,12 @@
             course2Img.src = "img/Course2.png";
             let course3Img = new Image();
             course3Img.src = "img/Course3.png";
+            let area1Img = new Image();
+            area1Img.src = "img/Area1.png";
+            let area2Img = new Image();
+            area2Img.src = "img/Area2.png";
+            let area3Img = new Image();
+            area3Img.src = "img/Area3.png";
             let carImg = new Image();
             carImg.src = "img/Car.png";
             let redImg = new Image();
@@ -128,6 +166,8 @@
                     renderer.setSize(canvas.width, canvas.height);
                 }
                 document.getElementById("canvas_wrapper").style.height = String(canvas.height+10)+"px";
+                document.getElementById("restart").style.right = String(canvas.offsetLeft)+"px";
+                document.getElementById("how_to_play").width = canvas.width*0.5;
             }
             window.addEventListener('resize', onWindowResize, false);
             onWindowResize();
@@ -153,19 +193,27 @@
                 checkNum = 6;
                 start();
             };
+            document.getElementById("restart").onclick = () => {
+                restart();
+            };
 
             function start(){
                 document.getElementById("parking").style.display = "none";
                 document.getElementById("course1").style.display = "none";
                 document.getElementById("course2").style.display = "none";
                 document.getElementById("course3").style.display = "none";
+                document.getElementById("restart").style.display = "";
                 setPhy();
                 setView();
                 if (mode == 0)    createTarget();
                 animate();
             }
 
-            if (navigator.userAgent.match(/iPhone|Android.+Mobile/)){
+            function restart(){
+                location.reload(false);
+            }
+
+            if (navigator.userAgent.match(/iPhone|Android.+Mobile/) && false){
                 if (typeof DeviceMotionEvent.requestPermission === 'function'){
                     (async () => await DeviceMotionEvent.requestPermission())();
                 }
@@ -183,12 +231,7 @@
                 const video = document.getElementById("video");
                 video.style.display = "none";
 
-                let flag = 0;
                 function onResults(results) {
-                    flag++;
-                    if (flag%3 != 0){
-                        return; 
-                    }
                     operation = true;
                     let width = canvas2.width;
                     let height = canvas2.height;
@@ -228,8 +271,35 @@
                                 handSize = Math.max(handSize, diff(avgx[index], avgy[index], width*point.x, height*point.y));
                             });
                         });
-                        wheelAngle = angle/2;
-                        wheelSpeed = clamp(70*(handSize/width-0.12), -5, 5);
+                        let maxSpeed = 5;
+                        if (carMode == 0){
+                            wheelAngle = angle/2;
+                            wheelSpeed = clamp(70*(handSize/width-0.12), -maxSpeed, maxSpeed);
+                        }
+                        else if (carMode == 1){
+                            wheelAngle = angle/2;
+                            wheelSpeed = clamp(70*(handSize/width-0.12), -maxSpeed, maxSpeed);
+                            /*
+                            phyBody.velocity.normalize();
+                            phyBody.velocity = phyBody.velocity.scale(20);
+                            for (let i=0; i<4; i++){
+                                phyWheels[i].velocity.normalize();
+                                phyWheels[i].velocity = phyWheels[i].velocity.scale(20);
+                            }
+                            */
+                        }
+                        else if (carMode == 2){
+                            wheelAngle = angle/2;
+                            wheelSpeed = clamp(70*(handSize/width-0.12), -maxSpeed/2, maxSpeed/2);
+                        }
+                        else if (carMode == 3){
+                            wheelAngle = clamp(angle/2, -0.75, 0.75);
+                            wheelSpeed = clamp(70*(handSize/width-0.12), -maxSpeed, maxSpeed);
+                            phyBody.angularVelocity = new CANNON.Vec3(0, angle*Math.sign(wheelSpeed), 0);
+                        }
+                        if (Date.now()-speedUp < 3000){
+                            wheelSpeed *= 2;
+                        }
                     }
                     else {
                         wheelAngle *= 0.95;
@@ -250,6 +320,8 @@
                     if (mode > 0){
                         let img2 = new cv.Mat(height, width, cv.CV_8UC4, new cv.Scalar());
                         let course = cv.imread([course1Img, course2Img, course3Img][mode-1]);
+                        let area = cv.imread([area1Img, area2Img, area3Img][mode-1]);
+                        //cv.cvtColor(area, area, cv.COLOR_BGR2HSV);
                         cv.resize(course, course, new cv.Size(height/3, height/3));
                         M = cv.getRotationMatrix2D(new cv.Point(height/6, height/6), 90, 1);
                         cv.warpAffine(course, course, M, new cv.Size(height/3, height/3), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
@@ -291,6 +363,48 @@
                         let x, y;
                         x = viewCar.position.z/planeSize+0.5;
                         y = -viewCar.position.x/planeSize+0.5;
+                        if (0 < x && x < 1 && 0 < y && y < 1){
+                            carMode = area.ucharPtr(x*area.rows, (1-y)*area.cols);
+                            if (carMode[0] == 255){
+                                carMode = 1;
+                                speedUp = Date.now();
+                            }
+                            else if (carMode[1] == 255){
+                                carMode = 2;
+                            }
+                            else if (carMode[2] == 255){
+                                carMode = 3;
+                            }
+                            else {
+                                carMode = 0;
+                            }
+                        }
+                        else {
+                            carMode = 2;
+                        }
+                        area.delete();
+
+                        if (Date.now()-speedUp < 3000){
+                            for (let i=4; i<8; i++){
+                                viewWheels[i].material.color.set(0xffff00);
+                            }
+                        }
+                        else if (carMode == 0){
+                            for (let i=4; i<8; i++){
+                                viewWheels[i].material.color.set(0xaaaaaa);
+                            }
+                        }
+                        else if (carMode == 2){
+                            for (let i=4; i<8; i++){
+                                viewWheels[i].material.color.set(0x33aa33);
+                            }
+                        }
+                        else if (carMode == 3){
+                            for (let i=4; i<8; i++){
+                                viewWheels[i].material.color.set(0x00bbbb);
+                            }
+                        }
+
                         let forward = new THREE.Vector4(1, 0, 0, 0);
                         forward.applyMatrix4(viewCar.matrix).normalize();
                         let carAngle = Math.atan2(-forward.z, forward.x);
@@ -306,7 +420,7 @@
                         img2.delete();
                     }
 
-                    let speed = -wheelSpeed/5;
+                    let speed = clamp(-wheelSpeed/5, -1, 1);
                     let color = (speed => {
                         if (speed < -0.5)        return [255, speed*512+512, 0, 255];
                         else if (speed < 0)      return [-speed*512, 255, 0, 255];
@@ -330,9 +444,13 @@
                 });
                 hands.onResults(onResults);
 
+                let flag = 0;
                 const cameraDevice = new Camera(video, {
                     onFrame: async () => {
-                        await hands.send({image: video});
+                        flag++;
+                        if (flag%10 == 0){
+                            await hands.send({image: video});
+                        }
                     },
                     width: 1280,
                     height: 720
@@ -603,7 +721,10 @@
             // を繰り返す
             function animate(){
                 count++;
-                requestAnimationFrame(animate);
+                if (document.getElementById("restart").style.display != "none"){
+                    setTimeout(animate, 20);
+                }
+                //requestAnimationFrame(animate);
                 // 物理エンジンの時間を進める
                 if (operation)    world.step(timeStep);
                 
@@ -637,7 +758,7 @@
                         viewCheck[i].position.copy(phyCheck[i].position);
                         if (operation){
                             rot = new THREE.Quaternion();
-                            rot.setFromAxisAngle(new THREE.Vector3(0, 0, 1), 0.1);
+                            rot.setFromAxisAngle(new THREE.Vector3(0, 0, 1), 0.05);
                             viewCheck[i].quaternion.multiply(rot);
                         }
                     }
