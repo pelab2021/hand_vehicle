@@ -50,38 +50,9 @@
             <button id="course1" type="button" style="top: 30%; left: 30%;" class="btn btn-primary course">Course 1</button>
             <button id="course2" type="button" style="top: 40%; left: 35%;" class="btn btn-warning course">Course 2</button>
             <button id="course3" type="button" style="top: 50%; left: 40%;" class="btn btn-danger course">Course 3</button>
-            <button id="restart" type="button" style="width: 16%; top: 56%; right: 0%; display: none;" class="btn btn-primary course">Restart</button>
+            <button id="restart" type="button" style="width: 16%; top: 56%; right: 0%; display: none;" class="btn btn-primary course">Reload</button>
         </div>
         <video id="video"></video>
-        <div class="container-fluid">
-            <div class="row">
-              <div class="col-2"></div>
-              <div class="col-8">
-                <br>
-                <h1>遊び方</h1>
-                <center>
-                    <video id="how_to_play" src="img/how_to_play.mp4" controls></video>
-                </center>
-                <br>
-                <p>
-                カメラの画像から両手の角度と手の大きさを検出し、車のハンドルとアクセルを操作します。<br>
-                両手を傾けると連動してハンドルが傾き、手を広げる(あるいはカメラに近づける)と加速、手を握る(あるいはカメラから遠ざける)と減速します。
-                </p>
-                <p>
-                Parking, Course 1~3のゲームモードがあります。<br>
-                Parkingでは車を半透明のターゲットに合わせて駐車すること、Course 1~3では各コースに配置された赤色と青色のチェックポイントを全て通過することを目標とします。
-                </p>
-                <p>
-                ※カメラを使用できるPCのChrome/Firefoxでの実行を推奨いたします。<br>
-                ※PCの性能によって、動作が遅い場合があります。
-                </p>
-                <center>
-                    <iframe src="https://docs.google.com/forms/d/e/1FAIpQLSephYXm6roopJ-jU5LDxg8tg-I65UAZJ92zN0rKepJuD3Ytxg/viewform?embedded=true" width="640" height="640" frameborder="0" marginheight="0" marginwidth="0">読み込んでいます…</iframe>
-                </center>
-              </div>
-              <div class="col-2"></div>
-            </div>
-        </div>
         <script>
             let count = 0;
             let world;
@@ -167,7 +138,6 @@
                 }
                 document.getElementById("canvas_wrapper").style.height = String(canvas.height+10)+"px";
                 document.getElementById("restart").style.right = String(canvas.offsetLeft)+"px";
-                document.getElementById("how_to_play").width = canvas.width*0.5;
             }
             window.addEventListener('resize', onWindowResize, false);
             onWindowResize();
