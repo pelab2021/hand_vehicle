@@ -222,6 +222,18 @@
                     document.getElementById("min").innerText = "Min : "+String(localData[mode*3].toFixed(1));
                     document.getElementById("mean").innerText = "Mean: "+String((localData[mode*3+2]/localData[mode*3+1]).toFixed(1));
                 }
+                if (window.parent.document.getElementById("min0")){
+                    for (let i=0; i<4; i++){
+                        if (localData[i*3]){
+                            window.parent.document.getElementById("min"+String(i)).innerText = "　最短: "+String(localData[i*3].toFixed(1));
+                            window.parent.document.getElementById("mean"+String(i)).innerText = "　平均: "+String((localData[i*3+2]/localData[i*3+1]).toFixed(1));
+                        }
+                        else {
+                            window.parent.document.getElementById("min"+String(i)).innerText = "　最短: ";
+                            window.parent.document.getElementById("mean"+String(i)).innerText = "　平均: ";
+                        }
+                    }
+                }
                 document.getElementById("parking").style.display = "none";
                 document.getElementById("course1").style.display = "none";
                 document.getElementById("course2").style.display = "none";
@@ -255,6 +267,18 @@
                 }
                 document.getElementById("min").innerText = "Min : "+String(localData[mode*3].toFixed(1));
                 document.getElementById("mean").innerText = "Mean: "+String((localData[mode*3+2]/localData[mode*3+1]).toFixed(1));
+                if (window.parent.document.getElementById("min0")){
+                    for (let i=0; i<4; i++){
+                        if (localData[i*3]){
+                            window.parent.document.getElementById("min"+String(i)).innerText = "　最短: "+String(localData[i*3].toFixed(1));
+                            window.parent.document.getElementById("mean"+String(i)).innerText = "　平均: "+String((localData[i*3+2]/localData[i*3+1]).toFixed(1));
+                        }
+                        else {
+                            window.parent.document.getElementById("min"+String(i)).innerText = "　最短: ";
+                            window.parent.document.getElementById("mean"+String(i)).innerText = "　平均: ";
+                        }
+                    }
+                }
                 localStorage.setItem('data', JSON.stringify(localData));
                 time = 0;
                 document.getElementById("time").innerText = "Time: "+String(time.toFixed(1));
@@ -490,13 +514,14 @@
                         else {
                             angle = Math.atan2(avgy[1] - center[1], avgx[1] - center[0]);
                         }
-                        let handSize = 0;
+                        let handSizes = [0, 0];
                         let diff = (x1, y1, x2, y2) => {return ((x1-x2)**2+(y1-y2)**2)**0.5};
                         results.multiHandLandmarks.forEach((landmarks, index) => {
                             landmarks.forEach(point => {
-                                handSize = Math.max(handSize, diff(avgx[index], avgy[index], width*point.x, height*point.y));
+                                handSizes[index] = Math.max(handSizes[index], diff(avgx[index], avgy[index], width*point.x, height*point.y));
                             });
                         });
+                        let handSize = (handSizes[0]+handSizes[1])/2;
                         let maxSpeed = 5;
                         if (mode == 0)    maxSpeed = 2;
                         if (carMode == 0){
@@ -845,6 +870,18 @@
                             localStorage.setItem('data', JSON.stringify(localData));
                             document.getElementById("min").innerText = "Min : ";
                             document.getElementById("mean").innerText = "Mean: ";
+                            if (window.parent.document.getElementById("min0")){
+                                for (let i=0; i<4; i++){
+                                    if (localData[i*3]){
+                                        window.parent.document.getElementById("min"+String(i)).innerText = "　最短: "+String(localData[i*3].toFixed(1));
+                                        window.parent.document.getElementById("mean"+String(i)).innerText = "　平均: "+String((localData[i*3+2]/localData[i*3+1]).toFixed(1));
+                                    }
+                                    else {
+                                        window.parent.document.getElementById("min"+String(i)).innerText = "　最短: ";
+                                        window.parent.document.getElementById("mean"+String(i)).innerText = "　平均: ";
+                                    }
+                                }
+                            }
                             return;
                         };
                     }
