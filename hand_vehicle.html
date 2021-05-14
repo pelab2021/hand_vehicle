@@ -43,11 +43,6 @@
     </head>
     <body>
         <div id="canvas_wrapper">
-            <p style="position: absolute">
-            aaaaaaaaaaaaa<br>
-            aaaaaaaaaaaaa<br>
-            aaaaaaaaaaaaa<br>
-            </p>
             <canvas id="canvas"></canvas>
             <canvas id="canvas2" style="transform: scale(-1, 1); opacity: 1.0;"></canvas>
             <canvas id="canvas3" style="opacity: 0.8;"></canvas>
@@ -55,16 +50,27 @@
             <button id="course1" type="button" style="top: 30%; left: 30%;" class="btn btn-primary course">Course 1</button>
             <button id="course2" type="button" style="top: 40%; left: 35%;" class="btn btn-warning course">Course 2</button>
             <button id="course3" type="button" style="top: 50%; left: 40%;" class="btn btn-danger course">Course 3</button>
-            <button id="restart" type="button" style="width: 16%; top: 56%; right: 0%; display: none;" class="btn btn-primary course">Reload</button>
+            <button id="restart" type="button" style="width: 16%; top: 56%; right: 0%; display: none; opacity: 0.8;" class="btn btn-primary course">Reload</button>
+            <button id="time" type="button" style="width: 20%; top: 0%; left: 0%; display: none; opacity: 0.8;" class="btn btn-info course">Time: </button>
+            <button id="min" type="button" style="width: 20%; top: 10%; left: 0%; display: none; opacity: 0.8;" class="btn btn-info course">Min : </button>
+            <button id="mean" type="button" style="width: 20%; top: 20%; left: 0%; display: none; opacity: 0.8;" class="btn btn-info course">Mean: </button>
+            <button id="reset" type="button" style="width: 20%; top: 30%; left: 0%; display: none; opacity: 0.8;" class="btn btn-danger course">Reset data</button>
         </div>
         <video id="video"></video>
         <script>
-            let count = 0;
+            let time = 0;
             let world;
             let timeStep = 1/20;
+            let localData = new Array(100);
             // 物理エンジン上の平面、本体、車輪
             let phyPlane;
             let phyCar, phyBody, phyWheels = new Array(4);
+            let initBodyPosition = new CANNON.Vec3(), initBodyQuaternion = new CANNON.Quaternion();
+            let initWheelPosition = new Array(4), initWheelQuaternion = new Array(4);
+            for (let i=0; i<4; i++){
+                initWheelPosition[i] = new CANNON.Vec3();
+                initWheelQuaternion[i] = new CANNON.Quaternion();
+            }
             let checkNum = 8;
             let phyCheck = new Array(checkNum);
             let carSize = [35, 16, 16], phyBodySize = [24, 8, 8], wheelSize = [3.5, 2];
@@ -145,6 +151,10 @@
                 }
                 document.getElementById("canvas_wrapper").style.height = String(canvas.height+10)+"px";
                 document.getElementById("restart").style.right = String(canvas.offsetLeft)+"px";
+                document.getElementById("time").style.left = String(canvas.offsetLeft)+"px";
+                document.getElementById("min").style.left = String(canvas.offsetLeft)+"px";
+                document.getElementById("mean").style.left = String(canvas.offsetLeft)+"px";
+                document.getElementById("reset").style.left = String(canvas.offsetLeft)+"px";
                 let width = canvas.width;
                 let height = canvas.height;
                 if (handle != undefined){
@@ -203,6 +213,15 @@
             };
 
             function start(){
+                localData = JSON.parse(localStorage.getItem("data"));
+                if (!localData){
+                    localData = new Array(100);
+                    localStorage.setItem('data', JSON.stringify(localData));
+                }
+                else if (localData[mode*3]) {
+                    document.getElementById("min").innerText = "Min : "+String(localData[mode*3].toFixed(1));
+                    document.getElementById("mean").innerText = "Mean: "+String((localData[mode*3+2]/localData[mode*3+1]).toFixed(1));
+                }
                 document.getElementById("parking").style.display = "none";
                 document.getElementById("course1").style.display = "none";
                 document.getElementById("course2").style.display = "none";
@@ -210,8 +229,48 @@
                 document.getElementById("restart").style.display = "";
                 setPhy();
                 setView();
+                initBodyPosition.copy(phyBody.position);
+                initBodyQuaternion.copy(phyBody.quaternion);
+                for (let i=0; i<4; i++){
+                    initWheelPosition[i].copy(phyWheels[i].position);
+                    initWheelQuaternion[i].copy(phyWheels[i].quaternion);
+                }
                 if (mode == 0)    createTarget();
                 animate();
+            }
+
+            function end(){
+                localData = JSON.parse(localStorage.getItem("data"));
+                if (localData[mode*3]){
+                    if (time < localData[mode*3]){
+                        localData[mode*3] = time;
+                    }
+                    localData[mode*3+1]++;
+                    localData[mode*3+2] += time;
+                }
+                else {
+                    localData[mode*3] = time;
+                    localData[mode*3+1] = 1;
+                    localData[mode*3+2] = time;
+                }
+                document.getElementById("min").innerText = "Min : "+String(localData[mode*3].toFixed(1));
+                document.getElementById("mean").innerText = "Mean: "+String((localData[mode*3+2]/localData[mode*3+1]).toFixed(1));
+                localStorage.setItem('data', JSON.stringify(localData));
+                time = 0;
+                document.getElementById("time").innerText = "Time: "+String(time.toFixed(1));
+                if (mode != 0){
+                    phyBody.position.copy(initBodyPosition);
+                    phyBody.quaternion.copy(initBodyQuaternion);
+                    phyBody.velocity = new CANNON.Vec3(0, 0, 0);
+                    for (let i=0; i<4; i++){
+                        phyWheels[i].position.copy(initWheelPosition[i]);
+                        phyWheels[i].quaternion.copy(initWheelQuaternion[i]);
+                        phyWheels[i].velocity = new CANNON.Vec3(0, 0, 0);
+                    }
+                }
+                for (let i=0; i<checkNum; i++){
+                    viewCheck[i].visible = true;
+                }
             }
 
             function restart(){
@@ -219,7 +278,9 @@
             }
 
             function draw(){
-                operation = true;
+                if (!operation){
+                    operation = true;
+                }
                 let width = canvas2.width;
                 let height = canvas2.height;
                 
@@ -236,11 +297,10 @@
                 let roi = img.roi(new cv.Rect(width*2/3-height/3, height*2/3, height/3, height/3));
                 rotHandle.copyTo(roi);
                 roi.delete();
-
+                
                 if (mode > 0){
                     let carSize = height/3*50/planeSize;
                     let checkSize = carSize*0.6;
-                    let start = Date.now();
                     let img2 = new cv.Mat(height, width, cv.CV_8UC4, new cv.Scalar());
                     if (course == undefined){
                         course = cv.imread([course1Img, course2Img, course3Img][mode-1]);
@@ -335,7 +395,6 @@
                     
                     cv.imshow("canvas3", img2);
                     img2.delete();
-                    console.log(Date.now()-start);
                 }
 
                 let speed = clamp(-wheelSpeed/5, -1, 1);
@@ -582,15 +641,22 @@
                         phyCheck[i].collisionResponse = 0;
                         world.add(phyCheck[i]);
                         phyCheck[i].addEventListener("collide", e => {
-                            let flag = -1;
+                            let index = -1;
                             for (let i=0; i<checkNum; i++){
                                 if (e.body.id == phyCheck[i].id || e.target.id == phyCheck[i].id){
-                                    flag = i;
+                                    index = i;
                                     break;
                                 }
                             }
-                            if (flag != -1){
-                                viewCheck[flag].visible = false;
+                            if (index != -1){
+                                viewCheck[index].visible = false;
+                                let cleared = true;
+                                for (let i=0; i<checkNum; i++){
+                                    cleared &&= (!viewCheck[i].visible);
+                                }
+                                if (cleared){
+                                    end();
+                                }
                             }
                         });
                     }
@@ -757,13 +823,32 @@
             // 物理エンジンを1ステップ進める→CGに反映
             // を繰り返す
             function animate(){
-                count++;
+                document.getElementById("time").innerText = "Time: "+String(time.toFixed(1));
                 if (document.getElementById("restart").style.display != "none"){
                     setTimeout(animate, 20);
                 }
                 //requestAnimationFrame(animate);
                 // 物理エンジンの時間を進める
-                if (operation)    world.step(timeStep);
+                if (operation){
+                    world.step(timeStep);
+                    time += 0.02;
+                    if (time == 0.02){
+                        document.getElementById("time").style.display = "";
+                        document.getElementById("min").style.display = "";
+                        document.getElementById("mean").style.display = "";
+                        document.getElementById("reset").style.display = "";
+                        document.getElementById("reset").onclick = () => {
+                            localData = JSON.parse(localStorage.getItem("data"));
+                            for (let i=0; i<3; i++){
+                                localData[mode*3+i] = undefined;
+                            }
+                            localStorage.setItem('data', JSON.stringify(localData));
+                            document.getElementById("min").innerText = "Min : ";
+                            document.getElementById("mean").innerText = "Mean: ";
+                            return;
+                        };
+                    }
+                }
                 
                 /*
                 viewBody.position.copy(phyBody.position);
@@ -810,6 +895,7 @@
                     targetRatio += Math.floor(20/maxDist);
                     if (targetRatio > 360){
                         targetRatio = 0;
+                        end();
                         createTarget();
                     }
                 }
@@ -837,10 +923,10 @@
 
             function createTarget(){
                 if (targetBody == undefined){
-                    setTimeout(100, createTarget);
+                    setTimeout(createTarget, 100);
                     return;
                 }
-
+                
                 targetPosition = [10*Math.floor(Math.random()*7)-30, 10*Math.floor(Math.random()*7)-30];
                 targetDirection = Math.floor(Math.random()*4);
                 targetBody.position.set(targetPosition[0], phyBodySize[1]/2+wheelSize[0]/2, targetPosition[1]);
