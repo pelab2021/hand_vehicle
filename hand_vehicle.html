@@ -55,6 +55,7 @@
             <button id="min" type="button" style="width: 20%; top: 10%; left: 0%; display: none; opacity: 0.8;" class="btn btn-info course">Min : </button>
             <button id="mean" type="button" style="width: 20%; top: 20%; left: 0%; display: none; opacity: 0.8;" class="btn btn-info course">Mean: </button>
             <button id="reset" type="button" style="width: 20%; top: 30%; left: 0%; display: none; opacity: 0.8;" class="btn btn-danger course">Reset data</button>
+            <button id="loading" type="button" style="width: 40%; top: 80%; left: 30%; opacity: 0.5;" class="btn btn-dark course">Loading...</button>
         </div>
         <video id="video"></video>
         <script>
@@ -304,6 +305,7 @@
             function draw(){
                 if (!operation){
                     operation = true;
+                    document.getElementById("loading").style.display = "none";
                 }
                 let width = canvas2.width;
                 let height = canvas2.height;
